@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <title>SIGNALWATCH PRO</title>
@@ -286,6 +286,33 @@ async function fetchQ(sym) {
   } catch(e) { S.error = 'Erreur réseau — vérifie ta clé API.'; render(); }
 }
 
+async function fetchCandles(sym) {
+  // Try multiple free sources for historical data
+  try {
+    // Source 1: Finnhub candles (works on paid plan)
+    const to = Math.floor(Date.now()/1000);
+    const from = to - 90*24*3600;
+    const r = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${sym}&resolution=D&from=${from}&to=${to}&token=${S.key}`);
+    const d = await r.json();
+    if(d && d.s === 'ok' && d.c && d.c.length > 1) {
+      S.prices = d.c.slice(-200);
+      return;
+    }
+  } catch(e) {}
+  try {
+    // Source 2: Yahoo Finance via allorigins proxy
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=3mo`;
+    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const r = await fetch(proxy);
+    const raw = await r.json();
+    const data = JSON.parse(raw.contents);
+    const closes = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+    if(closes && closes.length > 1) {
+      S.prices = closes.filter(Boolean).slice(-200);
+    }
+  } catch(e) {}
+}
+
 async function search(sym) {
   const q = sym || S.sym.trim();
   if(!q || !S.key) return;
@@ -296,6 +323,8 @@ async function search(sym) {
     if(!d.result || !d.result.length) { S.error = 'Aucun résultat.'; S.loading = false; render(); return; }
     const t = d.result[0];
     S.ticker = { symbol: t.symbol, desc: t.description };
+    // Fetch candle history first for instant chart
+    await fetchCandles(t.symbol);
     startPoll();
     await fetchQ(t.symbol);
   } catch(e) { S.error = 'Erreur réseau.'; }
@@ -762,3 +791,4 @@ render();
 </script>
 </body>
 </html>
+un
